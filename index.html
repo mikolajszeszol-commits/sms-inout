@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <title>Komunikator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="chat-container">
+    
+    <!-- Ekran logowania / rejestracji -->
+    <div id="auth-screen">
+        <h2>Logowanie</h2>
+        <input type="text" id="authPhone" placeholder="Twój numer telefonu">
+        <input type="password" id="authPassword" placeholder="Hasło">
+        <button id="authBtn">Zaloguj / Zarejestruj</button>
+    </div>
+
+    <!-- Główny ekran czatu -->
+    <div id="main-screen" style="display: none;">
+        <div class="top-bar">
+            <span>Ja: <strong id="myPhoneLabel"></strong></span>
+            <button id="logoutBtn" class="small-btn">Wyloguj</button>
+        </div>
+
+        <div class="contact-box">
+            <input type="text" id="targetPhoneInput" placeholder="Numer osoby, do której piszesz">
+            <button id="saveContactBtn">Zapisz kontakt</button>
+        </div>
+
+        <div class="chat-header">
+            <span>Rozmowa z: <strong id="targetLabel">Brak</strong></span>
+        </div>
+
+        <div id="chat-box"></div>
+
+        <div class="input-group">
+            <input type="text" id="messageInput" placeholder="Napisz wiadomość...">
+            <button id="sendBtn">Wyślij</button>
+        </div>
+    </div>
+
+</div>
+
+<!-- Dołączamy darmową bibliotekę MQTT (HiveMQ) działającą w przeglądarce -->
+<script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
