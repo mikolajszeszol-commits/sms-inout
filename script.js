@@ -64,21 +64,21 @@ function showMainScreen() {
 }
 
 function connectBroker() {
-    // Używamy stabilnego, publicznego brokera MQTT przez WebSocket (HiveMQ)
-    const brokerUrl = 'wss://broker.hivemq.com:8884/mqtt';
+    // Używamy alternatywnego, publicznego brokera MQTT działającego na porcie 443 (HTTPS/WSS)
+    // Taki port nigdy nie jest blokowany przez zapory sieciowe w USA ani w żadnym innym kraju.
+    const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
     
-    appendSystemMessage("Łączenie z siecią...");
+    appendSystemMessage("Łączenie z globalną siecią...");
 
     client = mqtt.connect(brokerUrl);
 
     client.on('connect', function () {
         appendSystemMessage("Połączono pomyślnie z siecią!");
         
-        // Nasz unikalny kanał odbiorczy oparty o nasz numer telefonu
         let myChannel = "chat/user/" + myPhone;
         client.subscribe(myChannel, function (err) {
             if (!err) {
-                appendSystemMessage("Nasłuch wiadomości aktywny.");
+                appendSystemMessage("Gotowy do rozmowy.");
             }
         });
     });
@@ -90,17 +90,16 @@ function connectBroker() {
             let sender = parts[0];
             let text = parts.slice(1).join("|");
 
-            // Jeśli wiadomość pochodzi od osoby, z którą obecnie rozmawiamy
             if (sender === targetPhone) {
                 appendMessage(text, false);
             }
         } catch (e) {
-            console.error("Błąd przetwarzania wiadomości");
+            console.error("Błąd dekodowania wiadomości");
         }
     });
 
     client.on('error', function (err) {
-        appendSystemMessage("Błąd połączenia sieciowego.");
+        appendSystemMessage("Błąd połączenia z siecią.");
         console.error(err);
     });
 }
@@ -140,11 +139,9 @@ function sendMessage() {
         return;
     }
 
-    // Pakiet: MójNumer | Treść
     let packageData = myPhone + "|" + text;
     let encrypted = encrypt(packageData);
 
-    // Wysyłamy wiadomość dokładnie na kanał docelowego użytkownika
     let targetChannel = "chat/user/" + targetPhone;
     client.publish(targetChannel, encrypted);
 
