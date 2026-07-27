@@ -1,6 +1,22 @@
-let client = null;
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBrrYxm7r2b1GCY3GbVuHUSZ7jt6vTr2YA",
+    authDomain: "moj-komunikator-47f85.firebaseapp.com",
+    projectId: "moj-komunikator-47f85",
+    storageBucket: "moj-komunikator-47f85.firebasestorage.app",
+    messagingSenderId: "193983565879",
+    appId: "1:193983565879:web:38293cd3d0bfffe369afb2",
+    measurementId: "G-0KK6YR068E"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
 let myPhone = localStorage.getItem("chat_myPhone") || "";
 let targetPhone = localStorage.getItem("chat_targetPhone") || "";
+let unsubscribe = null;
 
 window.onload = function() {
     if (myPhone) {
@@ -34,7 +50,7 @@ function handleAuth() {
 function handleLogout() {
     localStorage.removeItem("chat_myPhone");
     localStorage.removeItem("chat_targetPhone");
-    if (client) client.end();
+    if (unsubscribe) unsubscribe();
     location.reload();
 }
 
@@ -47,6 +63,9 @@ function handleSaveContact() {
     targetPhone = target;
     localStorage.setItem("chat_targetPhone", targetPhone);
     document.getElementById("targetLabel").textContent = targetPhone;
+    
+    // Po zmianie kontaktu restartujemy nasłuchiwanie wiadomości
+    startListening();
     alert("Zapisano kontakt: " + targetPhone);
 }
 
@@ -60,78 +79,40 @@ function showMainScreen() {
         document.getElementById("targetLabel").textContent = targetPhone;
     }
 
-    connectBroker();
+    appendSystemMessage("Połączono z bazą Firebase!");
+    startListening();
 }
 
-function connectBroker() {
-    appendSystemMessage("Łączenie z serwerem...");
+function startListening() {
+    if (unsubscribe) unsubscribe();
+    if (!targetPhone) return;
 
-    // Używamy głównego, darmowego brokera HiveMQ przez bezpieczny WebSocket (port 8884)
-    const host = 'wss://broker.hivemq.com:8884/mqtt';
-    
-    const options = {
-        clientId: 'chat_' + Math.random().toString(16).substring(2, 10),
-        clean: true,
-        connectTimeout: 5000,
-    };
+    // Pobieramy wiadomości w czasie rzeczywistym z Firestore
+    const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
 
-    client = mqtt.connect(host, options);
-
-    client.on('connect', function () {
-        appendSystemMessage("Połączono pomyślnie z siecią!");
+    unsubscribe = onSnapshot(q, (snapshot) => {
+        const chatBox = document.getElementById("chat-box");
+        // Zachowujemy wiadomości systemowe, czyszcząc tylko stare wiadomości czatu jeśli chcemy, 
+        // ale najprościej jest po prostu sparsować nowe dokumenty:
         
-        // Subskrybujemy nasz kanał oparty o numer telefonu
-        let myChannel = "moj_czat_app/" + myPhone;
-        client.subscribe(myChannel, function (err) {
-            if (!err) {
-                appendSystemMessage("Gotowy do rozmowy.");
+        chatBox.innerHTML = "";
+        appendSystemMessage("Połączono z bazą Firebase!");
+
+        snapshot.forEach((doc) => {
+            let data = doc.data();
+            // Sprawdzamy czy wiadomość jest między nami a wybranym kontaktem
+            let isRelevant = (data.sender === myPhone && data.recipient === targetPhone) ||
+                             (data.sender === targetPhone && data.recipient === myPhone);
+
+            if (isRelevant) {
+                let isMine = (data.sender === myPhone);
+                appendMessage(data.text, isMine);
             }
         });
     });
-
-    client.on('message', function (topic, message) {
-        try {
-            let decrypted = decrypt(message.toString());
-            let parts = decrypted.split("|");
-            let sender = parts[0];
-            let text = parts.slice(1).join("|");
-
-            if (sender === targetPhone) {
-                appendMessage(text, false);
-            }
-        } catch (e) {
-            console.error("Błąd dekodowania");
-        }
-    });
-
-    client.on('error', function (err) {
-        appendSystemMessage("Błąd sieci. Sprawdź połączenie.");
-        console.error(err);
-    });
 }
 
-function encrypt(text) {
-    let result = [];
-    for (let i = 0; i < text.length; i++) {
-        result.push(text.charCodeAt(i));
-    }
-    return result.join(',');
-}
-
-function decrypt(encryptedText) {
-    try {
-        let codes = encryptedText.split(',');
-        let result = '';
-        for (let i = 0; i < codes.length; i++) {
-            result += String.fromCharCode(parseInt(codes[i]));
-        }
-        return result;
-    } catch (e) {
-        return "";
-    }
-}
-
-function sendMessage() {
+async function sendMessage() {
     const input = document.getElementById("messageInput");
     const text = input.value.trim();
 
@@ -140,21 +121,21 @@ function sendMessage() {
         alert("Najpierw wpisz i zapisz numer osoby, do której chcesz pisać!");
         return;
     }
-    if (!client || !client.connected) {
-        alert("Brak połączenia z siecią. Poczekaj sekundę...");
-        return;
+
+    try {
+        // Zapisujemy wiadomość w chmurze Google Firestore
+        await addDoc(collection(db, "messages"), {
+            sender: myPhone,
+            recipient: targetPhone,
+            text: text,
+            timestamp: serverTimestamp()
+        });
+
+        input.value = "";
+    } catch (e) {
+        console.error("Błąd wysyłania wiadomości: ", e);
+        alert("Nie udało się wysłać wiadomości.");
     }
-
-    // Pakiet: MójNumer | Treść
-    let packageData = myPhone + "|" + text;
-    let encrypted = encrypt(packageData);
-
-    // Wysyłamy na kanał docelowego użytkownika
-    let targetChannel = "moj_czat_app/" + targetPhone;
-    client.publish(targetChannel, encrypted);
-
-    appendMessage(text, true);
-    input.value = "";
 }
 
 function appendMessage(text, isMine) {
