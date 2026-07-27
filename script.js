@@ -1,6 +1,4 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
+// Konfiguracja Firebase
 const firebaseConfig = {
     apiKey: "AIzaSyBrrYxm7r2b1GCY3GbVuHUSZ7jt6vTr2YA",
     authDomain: "moj-komunikator-47f85.firebaseapp.com",
@@ -11,8 +9,9 @@ const firebaseConfig = {
     measurementId: "G-0KK6YR068E"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+// Inicjalizacja Firebase (starsza, stabilna metoda globalna)
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
 let myPhone = localStorage.getItem("chat_myPhone") || "";
 let targetPhone = localStorage.getItem("chat_targetPhone") || "";
@@ -44,7 +43,7 @@ function handleAuth() {
 
     myPhone = phone;
     localStorage.setItem("chat_myPhone", myPhone);
-    showMainScreen(); // <--- To wywołanie przełączało widok, teraz jest na miejscu!
+    showMainScreen();
 }
 
 function handleLogout() {
@@ -86,9 +85,7 @@ function startListening() {
     if (unsubscribe) unsubscribe();
     if (!targetPhone) return;
 
-    const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
-
-    unsubscribe = onSnapshot(q, (snapshot) => {
+    unsubscribe = db.collection("messages").orderBy("timestamp", "asc").onSnapshot((snapshot) => {
         const chatBox = document.getElementById("chat-box");
         chatBox.innerHTML = "";
         appendSystemMessage("Połączono z bazą Firebase!");
@@ -117,11 +114,11 @@ async function sendMessage() {
     }
 
     try {
-        await addDoc(collection(db, "messages"), {
+        await db.collection("messages").add({
             sender: myPhone,
             recipient: targetPhone,
             text: text,
-            timestamp: serverTimestamp()
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
 
         input.value = "";
