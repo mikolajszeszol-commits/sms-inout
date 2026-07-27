@@ -1,4 +1,4 @@
-let ws = null;
+let client = null;
 let myPhone = localStorage.getItem("chat_myPhone") || "";
 let targetPhone = localStorage.getItem("chat_targetPhone") || "";
 
@@ -34,7 +34,7 @@ function handleAuth() {
 function handleLogout() {
     localStorage.removeItem("chat_myPhone");
     localStorage.removeItem("chat_targetPhone");
-    if (ws) ws.close();
+    if (client) client.end();
     location.reload();
 }
 
@@ -60,44 +60,54 @@ function showMainScreen() {
         document.getElementById("targetLabel").textContent = targetPhone;
     }
 
-    connectWebSocket();
+    connectBroker();
 }
 
-function connectWebSocket() {
-    // Używamy profesjonalnego węzła WebSocket działającego na standardowym porcie 443 (nigdy nieblokowanym)
+function connectBroker() {
     appendSystemMessage("Łączenie z serwerem...");
 
-    ws = new WebSocket('wss://free.blr2.piesocket.com/v3/1?api_id=oGRVUnMIjvWqKlg6D0Z8zG4A9C1V9c8H&release=latest');
-
-    ws.onopen = () => {
-        appendSystemMessage("Połączono pomyślnie!");
+    // Używamy głównego, darmowego brokera HiveMQ przez bezpieczny WebSocket (port 8884)
+    const host = 'wss://broker.hivemq.com:8884/mqtt';
+    
+    const options = {
+        clientId: 'chat_' + Math.random().toString(16).substring(2, 10),
+        clean: true,
+        connectTimeout: 5000,
     };
 
-    ws.onmessage = (event) => {
-        try {
-            let decrypted = decrypt(event.data);
-            let parts = decrypted.split("|");
-            let recipient = parts[0];
-            let sender = parts[1];
-            let text = parts.slice(2).join("|");
+    client = mqtt.connect(host, options);
 
-            // Odbieramy tylko wiadomości skierowane do nas od wybranego kontaktu
-            if (recipient === myPhone && sender === targetPhone) {
+    client.on('connect', function () {
+        appendSystemMessage("Połączono pomyślnie z siecią!");
+        
+        // Subskrybujemy nasz kanał oparty o numer telefonu
+        let myChannel = "moj_czat_app/" + myPhone;
+        client.subscribe(myChannel, function (err) {
+            if (!err) {
+                appendSystemMessage("Gotowy do rozmowy.");
+            }
+        });
+    });
+
+    client.on('message', function (topic, message) {
+        try {
+            let decrypted = decrypt(message.toString());
+            let parts = decrypted.split("|");
+            let sender = parts[0];
+            let text = parts.slice(1).join("|");
+
+            if (sender === targetPhone) {
                 appendMessage(text, false);
             }
         } catch (e) {
             console.error("Błąd dekodowania");
         }
-    };
+    });
 
-    ws.onclose = () => {
-        appendSystemMessage("Utracono połączenie. Ponawiam...");
-        setTimeout(connectWebSocket, 2000);
-    };
-
-    ws.onerror = () => {
-        appendSystemMessage("Błąd sieci.");
-    };
+    client.on('error', function (err) {
+        appendSystemMessage("Błąd sieci. Sprawdź połączenie.");
+        console.error(err);
+    });
 }
 
 function encrypt(text) {
@@ -130,16 +140,19 @@ function sendMessage() {
         alert("Najpierw wpisz i zapisz numer osoby, do której chcesz pisać!");
         return;
     }
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-        alert("Brak połączenia z siecią. Poczekaj chwilę...");
+    if (!client || !client.connected) {
+        alert("Brak połączenia z siecią. Poczekaj sekundę...");
         return;
     }
 
-    // Pakiet: Odbiorca | Nadawca | Treść
-    let packageData = targetPhone + "|" + myPhone + "|" + text;
+    // Pakiet: MójNumer | Treść
+    let packageData = myPhone + "|" + text;
     let encrypted = encrypt(packageData);
 
-    ws.send(encrypted);
+    // Wysyłamy na kanał docelowego użytkownika
+    let targetChannel = "moj_czat_app/" + targetPhone;
+    client.publish(targetChannel, encrypted);
+
     appendMessage(text, true);
     input.value = "";
 }
