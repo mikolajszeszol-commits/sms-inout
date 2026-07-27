@@ -1,4 +1,4 @@
-let client = null;
+let ws = null;
 let myPhone = localStorage.getItem("chat_myPhone") || "";
 let targetPhone = localStorage.getItem("chat_targetPhone") || "";
 
@@ -34,7 +34,7 @@ function handleAuth() {
 function handleLogout() {
     localStorage.removeItem("chat_myPhone");
     localStorage.removeItem("chat_targetPhone");
-    if (client) client.end();
+    if (ws) ws.close();
     location.reload();
 }
 
@@ -60,48 +60,44 @@ function showMainScreen() {
         document.getElementById("targetLabel").textContent = targetPhone;
     }
 
-    connectBroker();
+    connectWebSocket();
 }
 
-function connectBroker() {
-    // Używamy alternatywnego, publicznego brokera MQTT działającego na porcie 443 (HTTPS/WSS)
-    // Taki port nigdy nie jest blokowany przez zapory sieciowe w USA ani w żadnym innym kraju.
-    const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
-    
-    appendSystemMessage("Łączenie z globalną siecią...");
+function connectWebSocket() {
+    // Używamy profesjonalnego węzła WebSocket działającego na standardowym porcie 443 (nigdy nieblokowanym)
+    appendSystemMessage("Łączenie z serwerem...");
 
-    client = mqtt.connect(brokerUrl);
+    ws = new WebSocket('wss://free.blr2.piesocket.com/v3/1?api_id=oGRVUnMIjvWqKlg6D0Z8zG4A9C1V9c8H&release=latest');
 
-    client.on('connect', function () {
-        appendSystemMessage("Połączono pomyślnie z siecią!");
-        
-        let myChannel = "chat/user/" + myPhone;
-        client.subscribe(myChannel, function (err) {
-            if (!err) {
-                appendSystemMessage("Gotowy do rozmowy.");
-            }
-        });
-    });
+    ws.onopen = () => {
+        appendSystemMessage("Połączono pomyślnie!");
+    };
 
-    client.on('message', function (topic, message) {
+    ws.onmessage = (event) => {
         try {
-            let decrypted = decrypt(message.toString());
+            let decrypted = decrypt(event.data);
             let parts = decrypted.split("|");
-            let sender = parts[0];
-            let text = parts.slice(1).join("|");
+            let recipient = parts[0];
+            let sender = parts[1];
+            let text = parts.slice(2).join("|");
 
-            if (sender === targetPhone) {
+            // Odbieramy tylko wiadomości skierowane do nas od wybranego kontaktu
+            if (recipient === myPhone && sender === targetPhone) {
                 appendMessage(text, false);
             }
         } catch (e) {
-            console.error("Błąd dekodowania wiadomości");
+            console.error("Błąd dekodowania");
         }
-    });
+    };
 
-    client.on('error', function (err) {
-        appendSystemMessage("Błąd połączenia z siecią.");
-        console.error(err);
-    });
+    ws.onclose = () => {
+        appendSystemMessage("Utracono połączenie. Ponawiam...");
+        setTimeout(connectWebSocket, 2000);
+    };
+
+    ws.onerror = () => {
+        appendSystemMessage("Błąd sieci.");
+    };
 }
 
 function encrypt(text) {
@@ -134,17 +130,16 @@ function sendMessage() {
         alert("Najpierw wpisz i zapisz numer osoby, do której chcesz pisać!");
         return;
     }
-    if (!client || !client.connected) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
         alert("Brak połączenia z siecią. Poczekaj chwilę...");
         return;
     }
 
-    let packageData = myPhone + "|" + text;
+    // Pakiet: Odbiorca | Nadawca | Treść
+    let packageData = targetPhone + "|" + myPhone + "|" + text;
     let encrypted = encrypt(packageData);
 
-    let targetChannel = "chat/user/" + targetPhone;
-    client.publish(targetChannel, encrypted);
-
+    ws.send(encrypted);
     appendMessage(text, true);
     input.value = "";
 }
