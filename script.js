@@ -44,7 +44,7 @@ function handleAuth() {
 
     myPhone = phone;
     localStorage.setItem("chat_myPhone", myPhone);
-    showMainScreen();
+    showMainScreen(); // <--- To wywołanie przełączało widok, teraz jest na miejscu!
 }
 
 function handleLogout() {
@@ -64,7 +64,6 @@ function handleSaveContact() {
     localStorage.setItem("chat_targetPhone", targetPhone);
     document.getElementById("targetLabel").textContent = targetPhone;
     
-    // Po zmianie kontaktu restartujemy nasłuchiwanie wiadomości
     startListening();
     alert("Zapisano kontakt: " + targetPhone);
 }
@@ -87,20 +86,15 @@ function startListening() {
     if (unsubscribe) unsubscribe();
     if (!targetPhone) return;
 
-    // Pobieramy wiadomości w czasie rzeczywistym z Firestore
     const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
 
     unsubscribe = onSnapshot(q, (snapshot) => {
         const chatBox = document.getElementById("chat-box");
-        // Zachowujemy wiadomości systemowe, czyszcząc tylko stare wiadomości czatu jeśli chcemy, 
-        // ale najprościej jest po prostu sparsować nowe dokumenty:
-        
         chatBox.innerHTML = "";
         appendSystemMessage("Połączono z bazą Firebase!");
 
         snapshot.forEach((doc) => {
             let data = doc.data();
-            // Sprawdzamy czy wiadomość jest między nami a wybranym kontaktem
             let isRelevant = (data.sender === myPhone && data.recipient === targetPhone) ||
                              (data.sender === targetPhone && data.recipient === myPhone);
 
@@ -123,7 +117,6 @@ async function sendMessage() {
     }
 
     try {
-        // Zapisujemy wiadomość w chmurze Google Firestore
         await addDoc(collection(db, "messages"), {
             sender: myPhone,
             recipient: targetPhone,
