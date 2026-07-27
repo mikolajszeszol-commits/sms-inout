@@ -2,35 +2,19 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Szyfrowany Czat na Numer ID</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .chat-container { width: 400px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: 500px; }
-        #setup-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; gap: 15px; }
-        #chat-screen { display: none; flex-direction: column; height: 100%; }
-        #chat-box { flex: 1; border: 1px solid #ddd; border-radius: 4px; padding: 10px; overflow-y: auto; margin-bottom: 10px; background: #fafafa; }
-        .input-group { display: flex; gap: 10px; }
-        input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; outline: none; }
-        button { padding: 10px 20px; background: #0084ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #006dd1; }
-        .msg { margin-bottom: 8px; padding: 6px 10px; border-radius: 4px; background: #e4e6eb; width: fit-content; max-width: 80%; word-break: break-word; }
-        .my-msg { background: #dcf8c6; margin-left: auto; }
-        .system-msg { color: #888; font-style: italic; font-size: 0.9em; text-align: center; width: 100%; background: none; }
-        .sender-tag { font-weight: bold; font-size: 0.8em; color: #006dd1; display: block; margin-bottom: 2px; }
-    </style>
+    <title>Szyfrowany Czat</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <div class="chat-container">
-    <!-- EKRAN STARTOWY: Wpisywanie swojego numeru ID -->
     <div id="setup-screen">
         <h3>Podaj swój numer ID / telefon</h3>
         <input type="text" id="myIdInput" placeholder="np. +48123456789">
         <button onclick="startChat()">Wejdź do czatu</button>
     </div>
 
-    <!-- EKRAN CZATU -->
-    <div id="chat-screen">
+    <div id="chat-screen" style="display: none;">
         <h2>Czat (<span id="currentIdDisplay"></span>)</h2>
         <div id="chat-box"></div>
         <div class="input-group">
@@ -40,130 +24,6 @@
     </div>
 </div>
 
-<script>
-    let ws;
-    let myId = "";
-
-    function startChat() {
-        const inputVal = document.getElementById("myIdInput").value.trim();
-        if (inputVal === "") {
-            alert("Musisz podać jakieś ID / numer!");
-            return;
-        }
-        myId = inputVal;
-        
-        // Przełączamy widok ekranów
-        document.getElementById("setup-screen").style.display = "none";
-        document.getElementById("chat-screen").style.display = "flex";
-        document.getElementById("currentIdDisplay").textContent = myId;
-
-        // Łączymy się z siecią WebSocket
-        connectWebSocket();
-    }
-
-    function connectWebSocket() {
-        ws = new WebSocket('wss://socketsbay.com/wss/v2/1/demo/');
-
-        ws.onopen = () => {
-            appendMessage("Połączono z siecią!", "system-msg");
-        };
-
-        ws.onmessage = (event) => {
-            if (!event.data) return;
-            
-            // Odbieramy zaszyfrowaną paczkę i ją deszyfrujemy
-            let decryptedData = decrypt(event.data);
-            
-            // Oczekiwany format w sieci: "ID|Wiadomość"
-            let parts = decryptedData.split("|");
-            if (parts.length >= 2) {
-                let sender = parts[0];
-                let text = parts.slice(1).join("|"); // w razie gdyby treść zawierała kreskę
-
-                // Wyświetlamy tylko wiadomości od drugiej osoby
-                if (sender !== myId) {
-                    appendMessage(text, "msg", sender);
-                }
-            }
-        };
-
-        ws.onclose = () => {
-            appendMessage("Utracono połączenie z serwerem.", "system-msg");
-        };
-    }
-
-    // Proste szyfrowanie zamieniające cały tekst (ID + Wiadomość) na kody ASCII rozdzielone przecinkami
-    function encrypt(text) {
-        let result = [];
-        for (let i = 0; i < text.length; i++) {
-            result.push(text.charCodeAt(i));
-        }
-        return result.join(',');
-    }
-
-    function decrypt(encryptedText) {
-        try {
-            let codes = encryptedText.split(',');
-            let result = '';
-            for (let i = 0; i < codes.length; i++) {
-                result += String.fromCharCode(parseInt(codes[i]));
-            }
-            return result;
-        } catch (e) {
-            return "";
-        }
-    }
-
-    function sendMessage() {
-        const textInput = document.getElementById("messageInput");
-        const text = textInput.value.trim();
-        if (text === "" || !ws) return;
-
-        // Sklejamy Twoje ID oraz treść wiadomości
-        let packageData = myId + "|" + text;
-        
-        // Szyfrujemy całość
-        let encryptedPackage = encrypt(packageData);
-        
-        // Wysyłamy w sieć
-        ws.send(encryptedPackage);
-
-        // Wyświetlamy u siebie jako naszą wiadomość
-        appendMessage(text, "msg my-msg", "Ty");
-        textInput.value = "";
-    }
-
-    // Przypisanie działania przycisku wysyłania oraz klawisza Enter
-    document.getElementById("sendBtn").addEventListener("click", sendMessage);
-    document.getElementById("messageInput").addEventListener("keypress", function(event) {
-        if (event.key === "Enter") {
-            sendMessage();
-        }
-    });
-
-    function appendMessage(text, className, senderName = "") {
-        const chatBox = document.getElementById("chat-box");
-        const div = document.createElement("div");
-        div.className = "msg " + className;
-
-        if (senderName && senderName !== "Ty") {
-            const senderTag = document.createElement("span");
-            senderTag.className = "sender-tag";
-            senderTag.textContent = senderName;
-            div.appendChild(senderTag);
-        }
-
-        const textSpan = document.createElement("span");
-        textSpan.textContent = text;
-        div.appendChild(textSpan);
-
-        chatBox.appendChild(div);
-        chatBox.scrollTop = chatBox.scrollHeight;
-    }
-</script>
-
-</body>
-</html>
-
+<script src="script.js"></script>
 </body>
 </html>
